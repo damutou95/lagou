@@ -8,9 +8,11 @@
 import logging
 from scrapy import signals
 import pymysql
+import base64
 import random
-from twisted.internet.error import TimeoutError, ConnectionLost, TCPTimedOutError, ConnectionRefusedError, ConnectError
-
+from twisted.internet.defer import _DefGen_Return
+from twisted.internet.error import TimeoutError, ConnectionLost, TCPTimedOutError, ConnectionRefusedError, ConnectError, ConnectionClosed
+from scrapy.core.downloader.handlers.http11 import TunnelError
 
 class LagouSpiderMiddleware(object):
     # Not all methods need to be defined. If a method is not defined,
@@ -110,7 +112,7 @@ class LagouDownloaderMiddleware(object):
         # - return a Response object: stops process_exception() chain
         # - return a Request object: stops process_exception() chain
         if isinstance(exception,
-                      (TimeoutError, ConnectionLost, TCPTimedOutError, ConnectionRefusedError, ConnectError)):
+                      (_DefGen_Return, TimeoutError, ConnectionClosed, TunnelError, ConnectionLost, TCPTimedOutError, ConnectionRefusedError, ConnectError)):
             if request.meta['tag'] < 30:
                 request.meta['tag'] += 1
                 logging.info(f"""重新发送请求{request.meta['tag']}次！""")
@@ -122,23 +124,14 @@ class LagouDownloaderMiddleware(object):
         spider.logger.info('Spider opened: %s' % spider.name)
 class HttpProxyMiddleware(object):
 
+    """ 阿布云ip代理配置，包括账号密码 """
+    proxyServer = "http://http-dyn.abuyun.com:9020"
+    proxyUser = "H0OJ68H5GO278T8D"
+    proxyPass = "2D72C8FE6CD45904"
+    # for Python3
+    proxyAuth = "Basic " + base64.urlsafe_b64encode(bytes((proxyUser + ":" + proxyPass), "ascii")).decode("utf8")
+
+    #阿布云ip代理配置
     def process_request(self, request, spider):
-        host = '127.0.0.1'
-        user = 'root'
-        passwd = '18351962092'
-        dbname = 'proxies'
-        tablename = 'proxy'
-        proxies = []
-        db = pymysql.connect(host, user, passwd, dbname)
-        cursor = db.cursor()
-        sql = f"select * from {tablename}"
-        cursor.execute(sql)
-        results = cursor.fetchall()
-        cursor.close()
-        for row in results:
-            ip = row[0]
-            port = row[1]
-            fromUrl = f"http://{ip}:{port}"
-            proxies.append(fromUrl)
-        proxy = random.choice(proxies)
-        request.meta['proxy'] = proxy
+        request.meta["proxy"] = self.proxyServer
+        request.headers["Proxy-Authorization"] = self.proxyAuth
